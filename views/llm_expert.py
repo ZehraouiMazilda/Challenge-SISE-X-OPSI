@@ -4,11 +4,14 @@ import chromadb
 from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 from chromadb.config import Settings
 import pandas as pd
-import json, os, hashlib
+import json, os, hashlib, logging
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
+from fpdf import FPDF
+import unicodedata
 
+logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
 load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
 
 GROQ_MODEL      = "llama-3.3-70b-versatile"
@@ -37,6 +40,43 @@ STYLE SOC PROFESSIONNEL :
 - Ton assertif et direct, comme un rapport d'incident
 - Privilege les verbes d'action : "Bloquer", "Surveiller", "Isoler", "Investiguer"
 - Cite les IPs, ports et rule_id exacts quand disponibles dans le contexte"""
+
+REPORT_PROMPT = """Tu es SENTINEL, analyste SOC senior. Genere un rapport de securite complet et professionnel en francais.
+Base-toi UNIQUEMENT sur le CONTEXTE RAG fourni.
+
+Le rapport doit suivre cette structure EXACTE :
+
+# RAPPORT D'ANALYSE SÉCURITÉ — SENTINEL SOC
+## Résumé Exécutif
+(3-4 phrases synthétisant la posture sécurité globale avec chiffres clés)
+
+## 1. Statistiques Générales
+(tableau ou liste avec : total logs, permit/deny, protocoles, période couverte)
+
+## 2. Menaces Identifiées
+(liste des menaces détectées avec niveau de sévérité et chiffres précis)
+
+## 3. Top IP Suspectes
+(top 5-10 IPs avec nombre de blocages et comportement observé)
+
+## 4. Ports les Plus Ciblés
+(top 5-8 ports avec service associé et nombre de tentatives)
+
+## 5. Analyse Temporelle
+(pics d'activité, heures sensibles, tendances)
+
+## 6. Règles Firewall
+(règles les plus sollicitées, règles potentiellement inutilisées)
+
+## 7. Recommandations Prioritaires
+(5-8 actions concrètes classées par priorité 🔴🟠🟡)
+
+## Conclusion
+(2-3 phrases de synthèse)
+
+---
+Rapport généré par SENTINEL · Projet SISE-OPSIE 2026
+Sois précis, professionnel, cite des chiffres réels issus du contexte."""
 
 SUGGESTED_QUESTIONS = {
     "🔍 Détection": [
@@ -83,17 +123,13 @@ CSS = """<style>
 .src-chunk{background:rgba(123,97,255,0.05);border-left:3px solid #7b61ff;
   border-radius:0 8px 8px 0;padding:0.6rem 0.9rem;font-size:0.72rem;color:#6b7a99;
   margin-top:0.4rem;font-family:monospace;line-height:1.6;}
-.mrow{display:flex;gap:0.5rem;flex-wrap:wrap;margin:0.8rem 0;}
-.mbox{flex:1;min-width:60px;background:#141c2e;border:1px solid rgba(0,212,255,0.1);
-  border-radius:8px;padding:0.5rem;text-align:center;}
-.mv{font-size:1rem;font-weight:700;font-family:monospace;display:block;}
-.ml{font-size:0.6rem;color:#6b7a99;text-transform:uppercase;letter-spacing:0.06em;}
 </style>"""
 
-# ── ChromaDB ─────────────────────────────────────────────────────────────
+
+# ── ChromaDB ──────────────────────────────────────────────────────────────
 @st.cache_resource(show_spinner=False)
 def init_chroma():
-    ef = SentenceTransformerEmbeddingFunction(model_name=EMBED_MODEL)
+    ef     = SentenceTransformerEmbeddingFunction(model_name=EMBED_MODEL)
     client = chromadb.PersistentClient(
         path=CHROMA_PATH, settings=Settings(anonymized_telemetry=False)
     )
@@ -102,9 +138,10 @@ def init_chroma():
         metadata={"hnsw:space": "cosine"}
     )
 
+
 # ── Build chunks ──────────────────────────────────────────────────────────
 def build_chunks(df: pd.DataFrame) -> list:
-    chunks = []
+    chunks  = []
     total   = len(df)
     permits = int((df["action"] == "Permit").sum()) if "action" in df.columns else 0
     denies  = int((df["action"] == "Deny").sum())   if "action" in df.columns else 0
@@ -121,8 +158,8 @@ def build_chunks(df: pd.DataFrame) -> list:
         chunks.append(f"TOP IP SOURCES ACTIVES\n{ti}\n\nTOP IP SOURCES BLOQUEES\n{tid}")
 
     if "dest_port" in df.columns:
-        pn = {21:"FTP",22:"SSH",23:"Telnet",53:"DNS",80:"HTTP",443:"HTTPS",
-              3306:"MySQL",8080:"HTTP-Alt",3389:"RDP",445:"SMB",137:"NetBIOS"}
+        pn  = {21:"FTP",22:"SSH",23:"Telnet",53:"DNS",80:"HTTP",443:"HTTPS",
+               3306:"MySQL",8080:"HTTP-Alt",3389:"RDP",445:"SMB",137:"NetBIOS"}
         tp  = df["dest_port"].value_counts().head(20)
         tpd = df[df["action"]=="Deny"]["dest_port"].value_counts().head(20) if "action" in df.columns else pd.Series()
         chunks.append(
@@ -139,11 +176,11 @@ def build_chunks(df: pd.DataFrame) -> list:
 
     if "date" in df.columns:
         try:
-            dft = df.copy()
+            dft       = df.copy()
             dft["date"] = pd.to_datetime(dft["date"])
-            dft["h"] = dft["date"].dt.hour
-            bh = dft.groupby("h").size()
-            dh = dft[dft["action"]=="Deny"].groupby("h").size() if "action" in dft.columns else pd.Series()
+            dft["h"]  = dft["date"].dt.hour
+            bh        = dft.groupby("h").size()
+            dh        = dft[dft["action"]=="Deny"].groupby("h").size() if "action" in dft.columns else pd.Series()
             chunks.append(
                 f"ANALYSE TEMPORELLE\nPeriode: {dft['date'].min()} -> {dft['date'].max()}\n"
                 f"Heure pic total: {int(bh.idxmax())}h | Heure pic deny: {int(dh.idxmax()) if not dh.empty else 'N/A'}h\n"
@@ -189,7 +226,7 @@ def ingest(df: pd.DataFrame, collection) -> int:
         b = chunks[i:i+50]
         collection.add(documents=b, ids=[f"c{i+j}" for j in range(len(b))])
     st.session_state["rag_hash"] = h
-    st.session_state["rag_n"] = len(chunks)
+    st.session_state["rag_n"]    = len(chunks)
     return len(chunks)
 
 
@@ -202,7 +239,7 @@ def call_groq(question: str, ctx_chunks: list, history: list) -> str:
     key = os.getenv("GROQ_API_KEY", "")
     if not key:
         return "Cle GROQ_API_KEY manquante dans .env"
-    ctx = "\n\n---\n\n".join([c[:800] for c in ctx_chunks])  # max 800 chars par chunk
+    ctx  = "\n\n---\n\n".join([c[:800] for c in ctx_chunks])
     msgs = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "system", "content": f"CONTEXTE RAG (donnees reelles):\n\n{ctx}"},
@@ -222,6 +259,131 @@ def call_groq(question: str, ctx_chunks: list, history: list) -> str:
         return f"Erreur Groq: {err}"
 
 
+# ── Génération rapport PDF ────────────────────────────────────────────────
+def generate_report_text(collection, df) -> str:
+    key = os.getenv("GROQ_API_KEY", "")
+    if not key:
+        return "Cle GROQ_API_KEY manquante."
+
+    queries = [
+        "resume global statistiques logs firewall",
+        "IP suspectes attaques detectees",
+        "ports cibles blocages deny",
+        "regles firewall utilisation",
+        "analyse temporelle pics activite",
+    ]
+    all_chunks = []
+    for q in queries:
+        for c in retrieve(q, collection, top_n=3):
+            if c not in all_chunks:
+                all_chunks.append(c)
+
+    ctx  = "\n\n---\n\n".join([c[:600] for c in all_chunks[:12]])
+    msgs = [
+        {"role": "system", "content": REPORT_PROMPT},
+        {"role": "system", "content": f"CONTEXTE RAG COMPLET:\n\n{ctx}"},
+        {"role": "user",   "content": "Génère le rapport de sécurité complet basé sur ces données."}
+    ]
+    try:
+        r = Groq(api_key=key).chat.completions.create(
+            model=GROQ_MODEL, messages=msgs, max_tokens=3000, temperature=0.1
+        )
+        return r.choices[0].message.content
+    except Exception as e:
+        return f"Erreur generation rapport: {e}"
+
+
+def build_pdf(report_text: str, df) -> bytes:
+    import unicodedata
+
+    def clean_text(text: str) -> str:
+        replacements = {
+            "🔴":"[CRITIQUE]","🟠":"[ELEVE]","🟡":"[MOYEN]","🟢":"[INFO]",
+            "✅":"[OK]","⚠️":"[!]","🛡️":"[SEC]","📊":"[STAT]",
+            "🔍":"[DETECT]","🧠":"[ANALYSE]","💡":"[INFO]","•":"-","→":"->",
+            "—":"-","–":"-","'":"'","'":"'",""":'"',""":'"',"«":'"',"»":'"',
+        }
+        for char, rep in replacements.items():
+            text = text.replace(char, rep)
+        text = unicodedata.normalize("NFKD", text)
+        text = text.encode("ascii", errors="ignore").decode("ascii")
+        return text
+
+    clean = clean_text(report_text)
+
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf.add_page()
+
+    # ── En-tête ──
+    pdf.set_fill_color(8, 12, 20)
+    pdf.rect(0, 0, 210, 40, 'F')
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.set_text_color(0, 212, 255)
+    pdf.set_xy(15, 10)
+    pdf.cell(0, 10, "SENTINEL - Rapport d'Analyse Securite", ln=True)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(107, 122, 153)
+    pdf.set_xy(15, 22)
+    pdf.cell(0, 6, f"Projet SISE-OPSIE 2026  -  Genere le {datetime.now().strftime('%d/%m/%Y a %H:%M')}  -  Powered by SENTINEL RAG", ln=True)
+    pdf.set_xy(15, 30)
+
+    total  = len(df) if df is not None else 0
+    denies = int((df["action"]=="Deny").sum()) if df is not None and "action" in df.columns else 0
+    pdf.cell(0, 6, f"Logs analyses : {total:,}  -  Deny : {denies:,} ({denies/total*100:.1f}%)  -  Modele : Llama 3.3 70B via Groq", ln=True)
+
+    pdf.ln(18)
+    pdf.set_text_color(30, 30, 30)
+
+    # Largeur utile : 210 - 15 (gauche) - 15 (droite) = 180
+    W = 180
+
+    for line in clean.split("\n"):
+        line = line.strip()
+        if not line:
+            pdf.ln(3)
+            continue
+        if line.startswith("# "):
+            pdf.set_font("Helvetica", "B", 15)
+            pdf.set_text_color(0, 100, 180)
+            pdf.set_fill_color(230, 240, 255)
+            pdf.set_x(15)
+            pdf.multi_cell(W, 9, line[2:], fill=True)
+            pdf.ln(2)
+        elif line.startswith("## "):
+            pdf.set_font("Helvetica", "B", 12)
+            pdf.set_text_color(0, 80, 150)
+            pdf.ln(3)
+            pdf.set_x(15)
+            pdf.multi_cell(W, 8, line[3:])
+            pdf.set_draw_color(0, 150, 200)
+            pdf.set_line_width(0.4)
+            pdf.line(15, pdf.get_y(), 195, pdf.get_y())
+            pdf.ln(2)
+        elif line.startswith("- ") or line.startswith("* "):
+            pdf.set_font("Helvetica", "", 10)
+            pdf.set_text_color(40, 40, 40)
+            pdf.set_x(18)
+            pdf.multi_cell(W - 3, 6, "- " + line[2:])
+        elif line.startswith("---"):
+            pdf.set_draw_color(200, 200, 200)
+            pdf.line(15, pdf.get_y(), 195, pdf.get_y())
+            pdf.ln(3)
+        else:
+            pdf.set_font("Helvetica", "", 10)
+            pdf.set_text_color(40, 40, 40)
+            pdf.set_x(15)
+            pdf.multi_cell(W, 6, line)
+
+    # ── Pied de page ──
+    pdf.set_y(-20)
+    pdf.set_font("Helvetica", "I", 8)
+    pdf.set_text_color(150, 150, 150)
+    pdf.cell(0, 6, f"SENTINEL SOC - SISE-OPSIE 2026 - Page {pdf.page_no()}", align="C")
+
+    return bytes(pdf.output())
+
+
 # ── Main view ─────────────────────────────────────────────────────────────
 def show():
     st.markdown(CSS, unsafe_allow_html=True)
@@ -234,41 +396,45 @@ def show():
     </div>
     """, unsafe_allow_html=True)
 
-    for k, v in [("llm_history",[]),("rag_hash",None),("rag_n",0),("show_src",False)]:
+    for k, v in [("llm_history",[]),("rag_hash",None),("rag_n",0),("show_src",False),("report_bytes",None)]:
         if k not in st.session_state:
             st.session_state[k] = v
+
+    # ── Chargement CSV si pas encore dans session_state ──────────────
+    if "df" not in st.session_state or st.session_state["df"] is None:
+        try:
+            st.session_state["df"] = pd.read_csv(
+                Path(__file__).resolve().parent.parent / "data" / "data_exm.csv"
+            )
+        except FileNotFoundError:
+            st.error("⚠️ Fichier introuvable : data/data_exm.csv")
+            return
 
     df         = st.session_state.get("df", None)
     rag_ready  = False
     collection = None
 
-    # ── Clé : ne spinner QUE si pas encore indexé ──────────────────
     if df is not None and not df.empty:
-        already_indexed = st.session_state.get("rag_hash") is not None
-
-        if already_indexed:
-            # Navigation fluide — silencieux et instantané
-            try:
-                collection = init_chroma()
-                rag_ready  = True
-            except Exception as e:
-                st.error(f"Erreur RAG : {e}")
-        else:
-            # Premier chargement uniquement
-            with st.spinner("⚙️ Initialisation RAG "):
-                try:
-                    collection = init_chroma()
+        try:
+            collection    = init_chroma()
+            ingest_needed = st.session_state.get("rag_hash") is None
+            if ingest_needed:
+                with st.spinner("⚙️ Initialisation RAG — première fois uniquement…"):
                     ingest(df, collection)
-                    rag_ready  = True
-                except Exception as e:
-                    st.error(f"Erreur RAG : {e}")
+            else:
+                try:
+                    if collection.count() == 0:
+                        ingest(df, collection)
+                except Exception:
+                    ingest(df, collection)
+            rag_ready     = True
+        except Exception as e:
+            st.error(f"Erreur RAG : {e}")
 
     n_chunks = st.session_state.get("rag_n", 0)
     total    = len(df) if df is not None else 0
     denies   = int((df["action"]=="Deny").sum())   if df is not None and "action" in df.columns else 0
     permits  = total - denies
-    n_ips    = df["ip_source"].nunique() if df is not None and "ip_source" in df.columns else 0
-    dr       = denies/total*100 if total else 0
     dot      = "sg" if rag_ready else "sr"
 
     st.markdown(f"""
@@ -293,7 +459,7 @@ def show():
 
     col_chat, col_side = st.columns([3, 1], gap="medium")
 
-    # ── Panneau droit ────────────────────────────────────────────────
+    # ── Panneau droit ─────────────────────────────────────────────────
     with col_side:
         st.markdown("#### 💡 Questions suggérées")
         for cat, qs in SUGGESTED_QUESTIONS.items():
@@ -307,19 +473,42 @@ def show():
                           help="Nombre de chunks envoyés au LLM comme contexte")
         st.session_state.show_src = st.toggle("Afficher sources RAG", False)
 
+        st.markdown("---")
+
+        # ── Rapport PDF ────────────────────────────────────────────
+        st.markdown("#### 📄 Rapport PDF")
+        if rag_ready:
+            if st.button("⚡ Générer le rapport", use_container_width=True, type="primary"):
+                with st.spinner("Génération du rapport en cours…"):
+                    report_text                    = generate_report_text(collection, df)
+                    pdf_bytes                      = build_pdf(report_text, df)
+                    st.session_state["report_bytes"] = pdf_bytes
+                st.success("Rapport généré !")
+
+            if st.session_state.get("report_bytes"):
+                st.download_button(
+                    label="📥 Télécharger le rapport PDF",
+                    data=st.session_state["report_bytes"],
+                    file_name=f"SENTINEL_rapport_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
+
+        st.markdown("---")
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("🗑️ Effacer la conversation", use_container_width=True):
             st.session_state.llm_history = []
             st.rerun()
         if st.session_state.llm_history:
             st.download_button(
-                "📥 Exporter (JSON)",
+                "📥 Exporter chat (JSON)",
                 data=json.dumps(st.session_state.llm_history, ensure_ascii=False, indent=2),
                 file_name=f"sentinel_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                mime="application/json", use_container_width=True
+                mime="application/json",
+                use_container_width=True
             )
 
-    # ── Zone de chat ─────────────────────────────────────────────────
+    # ── Zone de chat ──────────────────────────────────────────────────
     with col_chat:
         if not rag_ready:
             st.warning("⚠️ Aucune donnée chargée. Vérifiez que `df` est dans `st.session_state`.")
