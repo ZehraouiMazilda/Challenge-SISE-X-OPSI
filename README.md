@@ -187,19 +187,19 @@ Puis lancer via Docker ou en local selon la configuration décrite dans le dossi
 
 # 🎓 Contexte Académique
 
-Projet réalisé dans le cadre du Master 2 SISE — Université Lumière Lyon 2  
+Projet réalisé dans le cadre du Master 2 SISE et Master 2 OPSIE — Université Lumière Lyon 2  
 Année universitaire 2025–2026
 
 ---
 
 # 👥 Équipe Projet
 
-Maissa Lajimi  
-Aya Mecheri  
-Mazilda Zehraoui  
-Nom 4  
-Nom 5  
-Nom 6  
+__Maissa Lajimi__ 
+__Aya Mecheri__
+__Mazilda Zehraoui__ 
+__Nom 4__  
+__Nom 5__  
+__Nom 6__  
 
 ---
 
