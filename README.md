@@ -174,7 +174,7 @@ La clé ne doit jamais être versionnée.
 
 # 🚀 Lancement
 
-### 1️⃣ Setup
+### Setup initial
 Clonez le dépôt et préparez votre environnement :
 
 ```bash
@@ -187,7 +187,7 @@ echo "GROQ_API_KEY=votre_clé_ici" > .env
 
 ---
 
-## 🛠️ Choisissez votre méthode
+### Choisissez votre méthode
 
 ### 🐳 Option 1 : Docker
 
@@ -202,8 +202,6 @@ docker build -t challenge-sise .
 ```bash
 docker run -p 8501:8501 --env-file .env challenge-sise
 ```
-
----
 
 ### 💻 Option 2 : Installation Locale
 
@@ -233,7 +231,7 @@ streamlit run app.py
 
 ---
 
-## 🌐 Accès à l’application
+### 🌐 Accès à l’application
 Une fois le service démarré, l’interface est accessible ici :  
 
 ```
