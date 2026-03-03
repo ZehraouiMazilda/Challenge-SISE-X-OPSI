@@ -6,9 +6,6 @@ import plotly.graph_objects as go
 from datetime import datetime
 import os
 
-# ─────────────────────────────────────────────
-# DESIGN SYSTEM (identique à ml_analysis)
-# ─────────────────────────────────────────────
 STYLE = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap');
@@ -633,4 +630,5 @@ def show():
         st.error(f"❌ Erreur lors du chargement des données : {str(e)}")
 
 if __name__ == "__main__":
+
     show()
