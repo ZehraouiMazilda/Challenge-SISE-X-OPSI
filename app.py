@@ -3,7 +3,7 @@ from views import home, dashboard, ml_analysis, llm_expert
 
 st.set_page_config(
     page_title="AegisNet | SISE-OPSIE 2026",
-    page_icon="🛡️",
+    page_icon="assets/logo.png",
     layout="wide"
 )
 
@@ -147,4 +147,5 @@ elif page == "dashboard":
 elif page == "ml_analysis":
     ml_analysis.show()
 elif page == "llm_expert":
+
     llm_expert.show()
