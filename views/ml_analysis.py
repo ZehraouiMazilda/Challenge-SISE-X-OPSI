@@ -23,9 +23,6 @@ from sklearn.pipeline import Pipeline
 import warnings
 warnings.filterwarnings("ignore")
 
-# ─────────────────────────────────────────────
-# STYLES GLOBAUX
-# ─────────────────────────────────────────────
 STYLE = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap');
@@ -659,7 +656,7 @@ def onglet_kmeans(features):
     scaler = StandardScaler()
     X_reduit = scaler.fit_transform(features[cols_kmeans])
 
-    # Recherche du K optimal (méthode du coude)
+    # Recherche du K optimal 
     k_max = st.slider("Nombre maximum de clusters à tester", 3, 12, 8)
     inerties, silhouettes = [], []
     plage_k = range(2, k_max + 1)
@@ -1082,4 +1079,5 @@ def show():
         onglet_arbre_regles(df)
 
     with onglets[7]:
+
         onglet_bilan(df, features)
