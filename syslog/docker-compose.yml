@@ -1,0 +1,113 @@
+services:
+  syslog:
+    build: ./syslog
+    container_name: opsie-syslog
+    restart: unless-stopped
+    depends_on:
+      - db
+      - logstash
+    ports:
+      - "2222:22"
+      - "514:514/tcp"
+    volumes:
+      - ./log:/var/log
+    networks:
+      - training_opsie
+
+  db:
+    image: mysql:8.0
+    container_name: opsie-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: mypass123
+      MYSQL_ROOT_HOST: "%"
+      MYSQL_DATABASE: Logs_fw
+      MYSQL_USER: opsie
+      MYSQL_PASSWORD: opsie123
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-pmypass123"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - ./sql/db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      - training_opsie
+
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: opsie-pma
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      PMA_HOST: db
+      PMA_PORT: 3306
+      MYSQL_ROOT_PASSWORD: mypass123
+    ports:
+      - "8081:80"
+    networks:
+      - training_opsie
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.2
+    container_name: opsie-elasticsearch
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200 >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    networks:
+      - training_opsie
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.12.2
+    container_name: opsie-logstash
+    restart: unless-stopped
+    depends_on:
+      - elasticsearch
+    environment:
+      LS_JAVA_OPTS: "-Xms256m -Xmx256m"
+    ports:
+      - "5044:5044"
+      - "9600:9600"
+    volumes:
+      - ./logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+      - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
+    networks:
+      - training_opsie
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.12.2
+    container_name: opsie-kibana
+    restart: unless-stopped
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+      XPACK_SECURITY_ENABLED: "false"
+      SERVER_HOST: "0.0.0.0"
+      NODE_OPTIONS: "--max-old-space-size=1024"
+    ports:
+      - "5601:5601"
+    networks:
+      - training_opsie
+
+networks:
+  training_opsie:
+    external: true
+
+volumes:
+  es_data:
