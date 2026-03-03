@@ -76,25 +76,19 @@ sudo apt install -y nmap netcat-openbsd hydra gobuster nikto hping3
 ```
 
 ## 5) Demarrage rapide
-Depuis la racine du projet `Clean_solution`:
 
 ```bash
+# reseau docker
 docker network create training_opsie 2>/dev/null || true
-```
 
-Lancer la stack syslog + DB + ELK:
-
-```bash
-cd 01-syslog-stack
-docker compose up -d --build
+# stack logs + db + elk
+cd syslog
+docker compose up -d
 docker compose ps
-```
 
-Construire et lancer le firewall:
-
-```bash
-cd ../02-ulog-iptables
-docker build --no-cache -t opsie-ulog-iptables .
+# firewall
+cd ../ulog-iptables
+docker build -t opsie-ulog-iptables .
 SYSLOG_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' opsie-syslog)
 docker rm -f opsie-fw 2>/dev/null || true
 docker run -d --privileged --network training_opsie --name opsie-fw -e SYSLOG_SERVER_IP="$SYSLOG_IP" opsie-ulog-iptables
