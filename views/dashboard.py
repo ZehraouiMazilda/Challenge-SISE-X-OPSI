@@ -484,7 +484,7 @@ def show():
 
         with col2:
             ip_bubble = filtered_df.groupby('ip_source').agg(
-                Nb_Destinations=('ip_destination', 'nunique')
+                Nb_Destinations=('ip_destination', 'count')   # changed from nunique to count
             ).reset_index()
             ip_bubble.columns = ['IP Source', 'Nb Destinations Contactées']
 
