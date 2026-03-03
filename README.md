@@ -1,242 +1,212 @@
-# 🛡️ Challenge SISE x OPSIE — Plateforme Complète d’Analyse Cyber
 
-## 🎯 Présentation du Projet
+# 🛡️ Challenge SISE × OPSIE 2026  
+<p align="center">
+  <img src="assets/logo.png" width="240"/>
+</p>
 
-Ce projet regroupe **trois modules complémentaires** pour l’analyse avancée de logs Iptables :
+<p align="center">
+  <i>Plateforme complète d'analyse cyber, supervision et intelligence décisionnelle</i>
+</p>
 
-1. 📊 Dashboard descriptif interactif  
-2. 🤖 Module Machine Learning (détection & classification)  
-3. 🧠 Module RAG + LLM (SENTINEL SOC Assistant)
+---
 
-L'objectif est de proposer une **chaîne complète d’analyse sécurité** allant de la visualisation simple jusqu’à l’assistance SOC augmentée par LLM.
+# 🌍 Vision du projet
+
+Ce projet est né d’un objectif simple mais ambitieux : construire une chaîne complète allant 
+de la génération des logs firewall jusqu’à leur interprétation intelligente.
+
+Nous avons combiné deux dimensions complémentaires :
+
+• La partie OPSIE (infrastructure cyber et journalisation)  
+• La partie Data Science (analyse, Machine Learning et LLM)
+
+L’ensemble forme une plateforme cohérente, capable de :
+- Collecter les logs en temps réel
+- Les normaliser et les stocker
+- Les visualiser (Kibana + WebApp)
+- Détecter des comportements suspects
+- Générer des analyses SOC structurées via un LLM
+- Produire automatiquement un rapport PDF
 
 ---
 
 # 🏗️ Architecture Globale
 
-## Vue d’ensemble
-
 ```mermaid
 flowchart LR
-    A[Logs CSV Iptables] --> B[Dashboard Descriptif]
-    A --> C[Machine Learning]
-    A --> D[RAG Engine]
-    D --> E[Llama 3.3 70B - Groq API]
-    E --> F[Réponses SOC]
-    D --> G[Rapport PDF]
+    A[iptables] --> B[ulogd2]
+    B --> C[rsyslog]
+    C --> D[syslog-ng]
+
+    D --> E[Fichiers logs]
+    D --> F[MySQL]
+    D --> G[Logstash]
+
+    G --> H[Elasticsearch]
+    H --> I[Kibana]
+
+    E --> J[WebApp Streamlit]
+    F --> J
+
+    J --> K[Machine Learning]
+    J --> L[RAG Engine]
+
+    L --> M[Llama 3.3 70B - Groq]
+    M --> N[Réponse SOC]
+    L --> O[Rapport PDF]
 ```
+
+Cette architecture illustre la continuité complète entre infrastructure réseau et intelligence artificielle.
 
 ---
 
-# 📦 Structure du Projet
+# 🔐 Partie OPSIE — Infrastructure Cyber
 
-```
-Challenge-SISExOPSIE/
-│
-├── views/
-│   ├── dashboard.py
-│   ├── ml_analysis.py
-│   ├── llm_expert.py
-│
-├── data/
-│   └── data_exm.csv
-│
-├── .env
-├── requirements.txt
-└── app.py
-```
+La première étape consiste à mettre en place une chaîne robuste de collecte et centralisation des logs.
 
----
+Le flux principal est le suivant :
 
-# 📊 1️⃣ Dashboard Descriptif
+`iptables → ulogd2 → rsyslog → syslog-ng → (fichier + MySQL + Logstash) → Elasticsearch → Kibana`
 
-Fonctionnalités :
+Les services Docker utilisés sont :
+- opsie-fw (firewall)
+- opsie-syslog
+- opsie-db (MySQL)
+- opsie-pma
+- opsie-logstash
+- opsie-elasticsearch
+- opsie-kibana
 
-- Vue globale des flux Permit / Deny
-- Filtres par protocole et plage de ports (RFC 6056)
-- Analyse TCP vs UDP
-- Top IP sources
-- Distribution des ports
-- Export CSV
+Les champs normalisés incluent notamment :
+datetime, ipsrc, ipdst, proto, dstport, action, policyid, interface_in, interface_out.
+
+Cette partie garantit la traçabilité, la centralisation et la supervision des événements réseau.
 
 ---
 
-# 🤖 2️⃣ Module Machine Learning
+# 📊 Dashboard & WebApp
 
-Modèles implémentés :
+La WebApp Streamlit permet une exploration interactive des logs extraits.
 
-- Isolation Forest
-- LOF
-- K-Means
-- Régression Logistique
-- Arbre CART
-- Random Forest
-- ACP
+Elle propose notamment :
+- Comparaison TCP vs UDP
+- Analyse Permit / Deny
+- Filtrage selon la RFC 6056
+- Top 5 IP sources
+- Top 10 ports <1024 avec accès autorisé
+- Identification des IP hors plan d’adressage
+- Exploration tabulaire dynamique (équivalent renderDataTable via st.dataframe)
 
-Pipeline :
+L’objectif est d’offrir une lecture rapide et exploitable de la posture réseau.
+
+---
+
+# 🤖 Machine Learning
+
+La partie ML transforme les logs en profils comportementaux exploitables.
+
+Pipeline général :
 
 ```mermaid
 flowchart LR
     A[Logs CSV] --> B[Feature Engineering]
     B --> C[Standardisation]
-    C --> D[Modèles ML]
-    D --> E[Scores & Visualisations]
+    C --> D[Isolation Forest]
+    C --> E[LOF]
+    C --> F[KMeans]
+    C --> G[Logistic Regression]
+    C --> H[Random Forest]
 ```
+
+Les modèles permettent :
+- Détection d’anomalies (Isolation Forest, LOF)
+- Segmentation comportementale (KMeans)
+- Classification supervisée (Logistic Regression, CART, Random Forest)
+- Interprétation via règles décisionnelles
+
+Les métriques utilisées incluent Accuracy, AUC-ROC et validation croisée stratifiée.
 
 ---
 
-# 🧠 3️⃣ Module RAG + LLM (SENTINEL)
+# 🧠 RAG + LLM (SENTINEL)
 
-## Architecture RAG
+La couche intelligente repose sur une architecture RAG (Retrieval-Augmented Generation).
 
 ```mermaid
 flowchart LR
     A[Logs CSV] --> B[Chunking]
-    B --> C[Embedding vectoriel local]
-    C --> D[Indexation NumPy]
+    B --> C[Embedding 512D]
+    C --> D[Index NumPy]
     D --> E[Top-N Retrieval]
-    E --> F[Llama 3.3 70B via Groq]
-    F --> G[Réponse SOC structurée]
+    E --> F[Llama 3.3 70B - Groq]
+    F --> G[Réponse structurée SOC]
 ```
 
-## 🔎 Fonctionnement
+Le fonctionnement est le suivant :
 
-1. Les logs sont transformés en chunks textuels.
-2. Chaque chunk est vectorisé (embedding local 512 dimensions).
-3. Les embeddings sont indexés en mémoire.
-4. La requête utilisateur est vectorisée.
-5. Les Top-N chunks pertinents sont injectés dans le prompt.
-6. Llama 3.3 70B génère une réponse structurée SOC.
+Les logs sont découpés en blocs analytiques.  
+Chaque bloc est vectorisé (embedding local 512 dimensions).  
+La requête utilisateur est comparée aux blocs via similarité.  
+Les plus pertinents sont injectés dans le prompt du modèle Llama 3.3 70B (via Groq).  
+
+Le système produit une analyse structurée, contextualisée et exploitable.
 
 ---
 
-# 🚀 Installation Complète
+# 🔑 Configuration LLM
 
-## 1️⃣ Cloner le projet
+Créer un compte sur :  
+https://console.groq.com/
 
-```bash
-git clone https://github.com/VOTRE-REPO/Challenge-SISExOPSIE.git
-cd Challenge-SISExOPSIE
+Générer une clé API puis créer un fichier `.env` à la racine :
+
 ```
-
----
-
-## 🐳 Lancement avec Docker
-
-### 2️⃣ Créer le fichier .env
-
-Créer un fichier `.env` à la racine :
-
-```env
-GROQ_API_KEY=VOTRE_CLE_GROQ_ICI
-```
-
-⚠️ Ne jamais versionner ce fichier.
-
-### 3️⃣ Construire l’image
-
-```bash
-docker build -t sentinel-soc .
-```
-
-### 4️⃣ Lancer le conteneur
-
-```bash
-docker run -p 8501:8501 --env-file .env sentinel-soc
-```
-
-Puis ouvrir :
-
-http://localhost:8501
-
----
-
-## 💻 Lancement Local (sans Docker)
-
-```bash
-python -m venv venv
-```
-
-Activation :
-
-Windows :
-```bash
-venv\Scripts\activate
-```
-
-Mac/Linux :
-```bash
-source venv/bin/activate
-```
-
-Installer les dépendances :
-
-```bash
-pip install -r requirements.txt
-```
-
-Lancer :
-
-```bash
-streamlit run app.py
-```
-
----
-
-# 🔑 Configuration LLM (Groq)
-
-1️⃣ Aller sur https://console.groq.com/  
-2️⃣ Créer un compte  
-3️⃣ Générer une clé API  
-4️⃣ Ajouter dans `.env` :
-
-```env
 GROQ_API_KEY=VOTRE_CLE_ICI
 ```
 
 Modèle utilisé :
 
+`llama-3.3-70b-versatile`
+
+La clé ne doit jamais être versionnée.
+
+---
+
+# 🚀 Lancement
+
+Cloner le projet :
+
 ```
-llama-3.3-70b-versatile
+git clone https://github.com/VOTRE-REPO/Challenge-SISExOPSIE.git
+cd Challenge-SISExOPSIE
 ```
 
----
-
-# 📄 Génération Rapport PDF
-
-Le module RAG permet :
-
-- Génération automatique d’un rapport structuré
-- Export PDF professionnel
-- Basé uniquement sur les données réelles
+Puis lancer via Docker ou en local selon la configuration décrite dans le dossier OPSIE.
 
 ---
 
-# 🔐 Sécurité
+# 🎓 Contexte Académique
 
-- Clé API isolée dans `.env`
-- RAG strictement basé sur données locales
-- Prompt contraint anti-hallucination
+Projet réalisé dans le cadre du Master 2 SISE — Université Lumière Lyon 2  
+Année universitaire 2025–2026
 
 ---
 
-# 👨‍🎓 Contexte Académique
+# 👥 Équipe Projet
 
-Projet réalisé dans le cadre du challenge **SISE x OPSIE 2026**.
-
-### Auteurs
-
-- Maissa Lajimi  
-- Aya Mecheri  
-- Mazilda Zehraoui  
+Maissa Lajimi  
+Aya Mecheri  
+Mazilda Zehraoui  
+Nom 4  
+Nom 5  
+Nom 6  
 
 ---
 
 # 🏁 Conclusion
 
-Une plateforme SOC moderne combinant :
+Ce projet démontre l’intégration complète entre infrastructure cyber, analyse de données, 
+Machine Learning et intelligence artificielle générative.
 
-Dashboard + Machine Learning + RAG + LLM + Génération PDF
-
-Intégration complète Data Engineering, IA et Cybersécurité.
-
+Il ne s’agit pas seulement d’un dashboard ou d’un firewall, 
+mais d’une plateforme unifiée de supervision intelligente.
