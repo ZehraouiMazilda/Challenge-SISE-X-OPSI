@@ -198,8 +198,8 @@ __Maissa Lajimi__,
 __Aya Mecheri__,
 __Mazilda Zehraoui__,
 __Aatany Oussama__, 
-__Nom 5__ et 
-__Nom 6__  
+__Benayache Houssam__ et 
+__Mezzourh Yassine__  
 
 ---
 
